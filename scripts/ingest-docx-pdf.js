@@ -1,140 +1,87 @@
-// scripts/ingest-docx-pdf.js
-import fs from "fs";
-import path from "path";
-import dotenv from "dotenv";
+import fs from 'fs';
+import path from 'path';
+import mammoth from 'mammoth';
+import pdfParse from 'pdf-parse';
+import { supabase } from '../src/supabaseClient.js';
+import { getEmbedding } from '../src/embeddings.js';
+import dotenv from 'dotenv';
 dotenv.config();
 
-import * as pdfParseModule from "pdf-parse";
-import * as mammothModule from "mammoth";
-
-import { supabase } from "../src/db.js";
-import { getEmbedding } from "../src/embeddings.js";
-
-// Node v24 fix for default exports
-const pdfParse = pdfParseModule.default ?? pdfParseModule;
-const mammoth = mammothModule.default ?? mammothModule;
-
-// ------------------------------
-// CONFIG
-// ------------------------------
-const CHUNK_SIZE = 500; // words per chunk
-
-// ------------------------------
-// UTILS
-// ------------------------------
-function chunkText(text, chunkSize = CHUNK_SIZE) {
-  const words = text.split(/\s+/);
-  const chunks = [];
-
-  for (let i = 0; i < words.length; i += chunkSize) {
-    const chunkWords = words.slice(i, i + chunkSize);
-    chunks.push(chunkWords.join(" "));
-  }
-
-  return chunks;
-}
-
-async function extractDocx(filePath) {
-  console.log("Extracting DOCX:", filePath);
-  const buffer = fs.readFileSync(filePath);
-  const result = await mammoth.extractRawText({ buffer });
-  return result.value;
-}
-
-async function extractPdf(filePath) {
-  console.log("Extracting PDF:", filePath);
-  const buffer = fs.readFileSync(filePath);
-  const data = await pdfParse(buffer);
-  return data.text;
-}
-
-// ------------------------------
-// INGEST LOGIC
-// ------------------------------
-async function ingestFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const filename = path.basename(filePath);
-
-  let text = "";
-
-  // 1) Extract Text
-  if (ext === ".docx") {
-    text = await extractDocx(filePath);
-  } else if (ext === ".pdf") {
-    text = await extractPdf(filePath);
-  } else {
-    console.log("Unsupported file:", filename);
-    return;
-  }
-
-  if (!text || !text.trim()) {
-    console.log("No text extracted from file:", filename);
-    return;
-  }
-
-  // 2) Insert into documents table
-  const { data: doc, error: docError } = await supabase
-    .from("documents")
-    .insert({
-      filename,
-      metadata: { type: ext.replace(".", "") },
-    })
-    .select()
-    .single();
-
-  if (docError) {
-    console.error("Document insert error:", docError);
-    return;
-  }
-
-  console.log("Document inserted with ID:", doc.id);
-
-  // 3) Chunk text
-  const chunks = chunkText(text);
-  console.log("Chunks generated:", chunks.length);
-
-  // 4) Embedding + insert chunks
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-
-    try {
-      console.log(`Embedding chunk ${i + 1}/${chunks.length}...`);
-      const embedding = await getEmbedding(chunk);
-
-      const { error: chunkErr } = await supabase.from("chunks").insert({
-        document_id: doc.id,
-        chunk_index: i,
-        text: chunk,
-        embedding,
-      });
-
-      if (chunkErr) {
-        console.error("Chunk insert error:", chunkErr);
-      }
-    } catch (err) {
-      console.error("Embedding error:", err);
-    }
-  }
-
-  console.log("Ingestion complete for:", filename);
-}
-
-// ------------------------------
-// MAIN EXECUTION
-// ------------------------------
 const filePath = process.argv[2];
-
 if (!filePath) {
-  console.log("Usage: node scripts/ingest-docx-pdf.js ./files/myfile.docx");
-  process.exit(1);
+    console.error("Please provide a DOCX or PDF file path");
+    process.exit(1);
 }
 
-ingestFile(filePath)
-  .then(() => {
-    console.log("ALL DONE ✅");
-    process.exit(0);
-  })
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+async function extractText(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.docx') {
+        const buffer = fs.readFileSync(filePath);
+        const result = await mammoth.extractRawText({ buffer });
+        return result.value;
+    } else if (ext === '.pdf') {
+        const buffer = fs.readFileSync(filePath);
+        const data = await pdfParse(buffer);
+        return data.text;
+    } else {
+        throw new Error('Unsupported file type');
+    }
+}
+
+function chunkText(text, chunkSize = 500) {
+    const sentences = text.split(/\.\s+/);
+    const chunks = [];
+    let current = '';
+    for (let sentence of sentences) {
+        if ((current + sentence).length > chunkSize) {
+            chunks.push(current);
+            current = sentence + '. ';
+        } else {
+            current += sentence + '. ';
+        }
+    }
+    if (current) chunks.push(current);
+    return chunks;
+}
+
+async function ingestFile(filePath) {
+    const fileName = path.basename(filePath);
+    console.log(`Extracting: ${fileName}`);
+    const text = await extractText(filePath);
+    const chunks = chunkText(text);
+
+    // Insert document record
+    const { data: doc, error: docErr } = await supabase
+        .from('documents')
+        .insert([{ name: fileName, metadata: { source: fileName } }])
+        .select()
+        .single();
+
+    if (docErr) {
+        console.error('Document insert error:', docErr);
+        return;
+    }
+
+    console.log(`Document inserted with ID: ${doc.id}`);
+    console.log(`Chunks generated: ${chunks.length}`);
+
+    for (let i = 0; i < chunks.length; i++) {
+        try {
+            const embedding = await getEmbedding(chunks[i]);
+            const { error: chunkErr } = await supabase.from('chunks').insert([{
+                document_id: doc.id,
+                chunk_index: i,
+                text: chunks[i],
+                token_count: chunks[i].split(' ').length,
+                embedding
+            }]);
+            if (chunkErr) console.error('Chunk insert error:', chunkErr);
+            else console.log(`Chunk ${i+1} inserted`);
+        } catch (err) {
+            console.error(`Embedding error for chunk ${i+1}:`, err.message);
+        }
+    }
+    console.log(`Ingestion complete for: ${fileName}`);
+}
+
+ingestFile(filePath);

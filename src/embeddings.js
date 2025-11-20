@@ -1,73 +1,47 @@
-// src/embeddings.js
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const EMBED_PROVIDER = process.env.EMBED_PROVIDER || 'gemini';
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const MISTRAL_KEY = process.env.MISTRAL_API_KEY;
-
-// NOTE: These are example endpoints and response shapes. Replace with the exact
-// endpoint and JSON path from your provider docs or official SDKs.
+const EMBED_PROVIDER = process.env.EMBED_PROVIDER || 'mistral';
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 
 export async function getEmbedding(text) {
-  if (!text || text.length === 0) return [];
+    if (EMBED_PROVIDER === 'mistral') {
+        if (!MISTRAL_API_KEY) {
+            throw new Error('MISTRAL_API_KEY is not set in environment variables.');
+        }
+        
+        const response = await fetch('https://api.mistral.ai/v1/embeddings', { // Added /v1
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${MISTRAL_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                // Mistral API expects an array for input
+                input: [text], 
+                model: 'mistral-embed' // Recommended model name
+            })
+        });
 
-  if (EMBED_PROVIDER === 'gemini') {
-    if (!GEMINI_KEY) throw new Error('Set GEMINI_API_KEY in .env');
+        // 🚨 CRITICAL FIX 1: Check for API errors first
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Mistral API error: Status ${response.status}. Response: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        
+        // 🚨 CRITICAL FIX 2: Correctly access the embedding array
+        // It's typically at data.data[0].embedding for Mistral's API structure.
+        if (data && Array.isArray(data.data) && data.data.length > 0 && Array.isArray(data.data[0].embedding)) {
+            return data.data[0].embedding; // returns array of 1024 numbers
+        } else {
+            console.error('Mistral API response format unexpected:', data);
+            throw new Error('Mistral API returned an unexpected or malformed embedding structure.');
+        }
 
-    // Example Gemini embeddings HTTP call (update path & body per current docs)
-    const url = 'https://generativeai.googleapis.com/v1beta2/embeddings:generate'; // placeholder
-    const body = {
-      model: 'gemini-embed-001', // change to actual model name you will use
-      input: text
-    };
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GEMINI_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Gemini embed failed: ${res.status} ${txt}`);
+    } else {
+        throw new Error(`Unknown embed provider: ${EMBED_PROVIDER}`);
     }
-    const j = await res.json();
-    // Example: adjust to actual response shape (this is illustrative)
-    // e.g., j.data[0].embedding OR j.embedding
-    const embedding = j?.data?.[0]?.embedding ?? j?.embedding ?? null;
-    if (!embedding) throw new Error('No embedding returned from Gemini');
-    return embedding;
-  } else {
-    // Mistral
-    if (!MISTRAL_KEY) throw new Error('Set MISTRAL_API_KEY in .env');
-
-    const url = 'https://api.mistral.ai/v1/embeddings'; // placeholder
-    const body = {
-      model: 'mistral-embed', // change to actual model id
-      input: text
-    };
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${MISTRAL_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Mistral embed failed: ${res.status} ${txt}`);
-    }
-    const j = await res.json();
-    const embedding = j?.data?.[0]?.embedding ?? j?.embedding ?? null;
-    if (!embedding) throw new Error('No embedding returned from Mistral');
-    return embedding;
-  }
 }

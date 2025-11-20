@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medi Study Go | Product Consultant Chatbot</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #EBF1F7; color: #1F2937; }
+        .clean-card { background-color: white; border: 1px solid #D1D5DB; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -4px rgba(0,0,0,0.05);}
+        .brand-primary { background-color: #1e40af; }
+        .brand-primary-hover:hover { background-color: #1e3a8a; }
+        .text-brand-primary { color: #1e40af; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        #userInput { background: #F9FAFB; border: 1px solid #D1D5DB; min-height: 50px; line-height: 1.5; font-weight: 500; padding: 12px 16px; transition: all 0.2s; }
+        #userInput:focus { border-color: #1e40af; box-shadow: 0 0 0 2px rgba(30,64,175,0.2); background: white; }
+        #sendButton:focus { outline: 2px solid #1e40af; outline-offset: 2px; }
+        .typing-dot { width:8px; height:8px; background-color:#1e40af; border-radius:50%; display:inline-block; margin:0 2px; opacity:0.7; animation:bounce 0.8s infinite alternate; }
+        .typing-dot:nth-child(2){animation-delay:0.2s;}
+        .typing-dot:nth-child(3){animation-delay:0.4s;}
+        @keyframes bounce{from{transform:translateY(0);opacity:0.7;}to{transform:translateY(-5px);opacity:1;}}
+        .fade-in{opacity:0; transform:translateY(5px); animation:fadeInSlide 0.3s ease-out forwards;}
+        @keyframes fadeInSlide{to{opacity:1; transform:translateY(0);}}
+    </style>
+</head>
+
+<body class="h-screen overflow-hidden">
+
+    <div class="flex h-full p-2 md:p-4 md:space-x-4">
+
+        <!-- Sidebar -->
+        <aside class="sidebar-wrapper w-64 clean-card flex-col p-4 shadow-xl flex-shrink-0 hidden md:flex">
+            <div class="flex items-center gap-2 mb-6">
+                <h1 class="text-lg font-bold text-gray-800">Medi Study Go</h1>
+            </div>
+            <button class="w-full brand-primary text-white py-3 rounded-lg mb-6 font-semibold shadow-md brand-primary-hover transition">+ New Conversation</button>
+        </aside>
+
+        <!-- Chat main -->
+        <main class="flex-1 flex flex-col clean-card p-0 overflow-hidden shadow-xl">
+            <header class="bg-white p-4 border-b border-gray-200 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+                <h2 class="font-semibold text-xl text-gray-800">Product Consultant</h2>
+            </header>
+
+            <div id="chatBox" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+                <div class="flex items-start gap-3 fade-in">
+                    <div class="h-10 w-10 brand-primary text-white rounded-full flex items-center justify-center text-sm flex-shrink-0 font-medium">AI</div>
+                    <div class="bg-blue-50 max-w-[90%] md:max-w-2xl p-4 rounded-xl rounded-tl-sm shadow-sm border border-blue-100 font-normal leading-relaxed text-gray-700">
+                        <p class="font-bold text-brand-primary mb-1">Hello! I am your Medi Study Go Product Consultant.</p>
+                        <p class="mt-2">I can provide accurate info about our CBME-aligned products for BDS/MBBS courses.</p>
+                        <p class="mt-2 font-medium">Please type your question below.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-3 md:p-4 bg-white border-t border-gray-200 flex items-center gap-3 sticky bottom-0 z-10">
+                <textarea id="userInput" placeholder="Type your question here..." class="flex-1 rounded-lg outline-none resize-none h-[50px] transition"></textarea>
+                <button id="sendButton" class="brand-primary text-white rounded-full shadow-md transition flex items-center justify-center p-3 flex-shrink-0 hover:shadow-lg brand-primary-hover w-12 h-12 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12l14 0"></path>
+                        <path d="M12 5l7 7l-7 7"></path>
+                    </svg>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chatBox');
+        const userInput = document.getElementById('userInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function scrollToBottom(){ chatBox.scrollTop = chatBox.scrollHeight; }
+
+        function createUserMessage(message){
+            const div = document.createElement('div');
+            div.className='flex justify-end fade-in';
+            div.innerHTML=`<div class="bg-blue-700 text-white max-w-[90%] md:max-w-2xl p-4 rounded-xl rounded-br-sm shadow-md font-medium leading-relaxed">${message}</div>`;
+            chatBox.appendChild(div);
+            scrollToBottom();
+        }
+
+        function createTypingIndicator(){
+            const div=document.createElement('div');
+            div.id='typingIndicator';
+            div.className='flex items-start gap-3 fade-in';
+            div.innerHTML=`<div class="h-10 w-10 brand-primary text-white rounded-full flex items-center justify-center text-sm flex-shrink-0 font-medium">AI</div>
+            <div class="bg-gray-100 px-4 py-3 rounded-xl rounded-tl-sm shadow-sm border border-gray-200 flex items-center space-x-2">
+                <span class="text-sm font-medium text-gray-600 mr-1">The consultant is typing...</span>
+                <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+            </div>`;
+            chatBox.appendChild(div); scrollToBottom(); return div;
+        }
+
+        function createSystemResponse(results, rawQuery){
+            const indicator=document.getElementById('typingIndicator');
+            if(indicator) indicator.remove();
+
+            const div=document.createElement('div');
+            div.className='flex items-start gap-3 fade-in';
+            const content=document.createElement('div');
+            content.className='bg-white max-w-[90%] md:max-w-3xl p-5 rounded-xl rounded-tl-sm shadow-lg border border-gray-100 space-y-4 font-normal leading-relaxed text-gray-700';
+            if(results.length===0){
+                content.innerHTML=`<p>No results found for: <b>${rawQuery}</b></p>`;
+            } else {
+                content.innerHTML=`<p><b>Answer from your documents:</b></p>`;
+                results.forEach(r=>{
+                    const p=document.createElement('p'); p.innerText=r; content.appendChild(p);
+                });
+            }
+            const avatar=document.createElement('div');
+            avatar.className='h-10 w-10 brand-primary text-white rounded-full flex items-center justify-center text-sm flex-shrink-0 font-medium';
+            avatar.innerText='AI';
+            div.appendChild(avatar);
+            div.appendChild(content);
+            chatBox.appendChild(div);
+            scrollToBottom();
+        }
+
+        async function sendMessage(){
+            const rawQuery=userInput.value.trim(); if(!rawQuery) return;
+            createUserMessage(rawQuery);
+            createTypingIndicator();
+
+            try{
+                const response=await fetch('http://localhost:3000/chat',{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({query:rawQuery})
+                });
+                const data=await response.json();
+                const results=data.results||[];
+                createSystemResponse(results, rawQuery);
+            }catch(err){
+                console.error(err);
+                createSystemResponse(['Something went wrong. Please try again.'], rawQuery);
+            }
+            userInput.value=''; adjustTextareaHeight(userInput); scrollToBottom();
+        }
+
+        function adjustTextareaHeight(t){t.style.height='50px'; const h=t.scrollHeight; if(h>50) t.style.height=(h>150?150:h)+'px';}
+
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});
+        userInput.addEventListener('input',()=>adjustTextareaHeight(userInput));
+        window.onload=()=>{adjustTextareaHeight(userInput); scrollToBottom();}
+    </script>
+
+</body>
+</html>
